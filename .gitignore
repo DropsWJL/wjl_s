@@ -2,3 +2,7 @@
 *.txt
 resources/X.npy
 resources/y.npy
+resources/dict_time_position.pkl
+*.pyc
+*.npy
+*.json
