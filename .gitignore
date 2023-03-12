@@ -6,3 +6,5 @@ resources/dict_time_position.pkl
 *.pyc
 *.npy
 *.json
+Solution.pdf
+Solution.md
