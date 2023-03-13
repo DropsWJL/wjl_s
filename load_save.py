@@ -82,7 +82,40 @@ def load_data_dict_time_ap_ssi_from_sources():
     return dict_data
 
 
+def load_data_dict_time_ap_snr_from_sources(part: int):
+    fs = os.listdir(rcs_data_path)
+    dict_data = {}
+    pattern = re.compile(r'(\d+-\d+-\d+ \d+:\d+:\d+) .* The AP AP(.*)_wlan\d SNR: (\d+)\n')
+    if part <= 4:
+        fs = fs[300*(part-1):300*part]
+    elif part == 5:
+        fs = fs[1200:1448]
+    else:
+        return None
+
+    for file_name in fs:
+        print('Loading ' + file_name)
+        with open(rcs_data_path + '/' + file_name) as fp:
+            data = fp.read()
+            res_list = pattern.findall(data)
+            for res in res_list:
+                time_format, ap, snr = res
+
+                if time_format not in dict_data.keys():
+                    dict_data[time_format] = {}
+                if ap not in dict_data[time_format].keys():
+                    dict_data[time_format][ap] = [int(snr)]
+                else:
+                    dict_data[time_format][ap].append(int(snr))
+
+    return dict_data
+
+
 def load_model_from_pkl(model_type: str):
+    """
+    :param model_type: 可选LR、RANSAC
+    :return: linear_model
+    """
     if model_type == 'LR':
         with open(LR_model_path, "rb") as fp:
             model = pickle.load(fp)

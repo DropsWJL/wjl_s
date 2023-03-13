@@ -1,5 +1,4 @@
 import os
-import re
 import time
 import numpy as np
 from numpy import polyfit, poly1d
@@ -12,10 +11,9 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.metrics import r2_score
 import pickle
 import matplotlib.pyplot as plt
-import my_load
+import load_save
+import util
 
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
 
 LR_mse = [2238, 239, 2163, 241, 244]
 LR_r2 = [0.96406, 0.99341, 0.95831, 0.99160, 0.99092]
@@ -24,172 +22,161 @@ date_list = ['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04', '2023-01-05
              '2023-01-08', '2023-01-09', '2023-01-10', '2023-01-11', '2023-01-12', '2023-01-13', '2023-01-14',
              '2023-01-15', '2023-01-16', '2023-01-17', '2023-01-18', '2023-01-19', '2023-01-20', '2023-01-21',
              '2023-01-22', '2023-01-23', '2023-01-24', '2023-01-25', '2023-01-26', '2023-01-27', '2023-01-28']
-
-test_list = ['2023-01-01', '2023-01-02', '2023-01-03']
-
-
-def draw_histogram(data_list: list):
-    """
-    :param data_list: 需要罗列的数据,类型为list,len=5
-    :return: 无
-    """
-    fig, ax = plt.subplots()
-    label = ['different ways']
-    x = np.arange(len(label))
-    width = 0.35
-    rects1 = ax.bar(x - (2 * width) / 3, [data_list[0]], width / 5, label='原始数据')
-    rects2 = ax.bar(x - width / 3, [data_list[1]], width / 5, label='去除-850以下的SSI数据')
-    rects3 = ax.bar(x, [data_list[2]], width / 5, label='去除异常数据')
-    rects4 = ax.bar(x + width / 3, [data_list[3]], width / 5, label='先去除-850以下的SSI数据再去除异常数据')
-    rects5 = ax.bar(x + (2 * width) / 3, [data_list[4]], width / 5, label='先去除异常数据再去除-850以下的SSI数据')
-    ax.set_ylabel('R^2')
-    ax.set_title('R^2 in different ways')
-    ax.set_xticks(x)
-    ax.set_xticklabels(label)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
-              fancybox=True, shadow=True, ncol=5)
-
-    def autolabel(rects_list: list):
-        for rects in rects_list:
-            for rect in rects:
-                height = rect.get_height()
-                ax.annotate('{}'.format(height),
-                            xy=(rect.get_x() + rect.get_width() / 2, height),
-                            xytext=(0, 3),
-                            textcoords="offset points",
-                            ha='center', va='bottom'
-                            )
-
-    autolabel([rects1, rects2, rects3, rects4, rects5])
-    plt.show()
-
-
-def draw_snr_ssi(snr, ssi, model_type: str, title):
-    """
-    :param model_type: 线性回归预测模型的类型，可选 lr、RANSAC
-    :param snr: snr数据
-    :param ssi: ssi数据
-    :param title: 图表的标题
-    :return: 无返回值
-    """
-    X_train, X_test, y_train, y_test = train_test_split(snr, ssi, test_size=0.2, random_state=0)
-    train_model(X_train, y_train, model_type)
-    model = my_load.load_model_from_pkl(model_type)
-
-    y_predict = model.predict(X_test)
-    plt.plot(X_test, y_predict, color="blue", label="predict")
-    plt.scatter(X_test, y_test, c='g', marker='o')
-    plt.title(title)
-    plt.xlabel('SNR')
-    plt.ylabel('SSI')
-    plt.legend()
-    plt.grid()
-    plt.show()
-
-
-def train_model(X_train, y_train, model_type: str):
-    """
-    :param X_train: X数据
-    :param y_train: y数据
-    :param model_type: 线性回归预测模型的类型，可选 lr、RANSAC
-    :return: 将模型写入文件中，没有返回值
-    """
-    if model_type == 'LR':
-        model = linear_model.LinearRegression(fit_intercept=True, copy_X=True, n_jobs=-1)
-    elif model_type == 'RANSAC':
-        model = linear_model.RANSACRegressor()
-    else:
-        model = None
-
-    model.fit(X_train, y_train)
-
-    with open('resources/model/' + model_type + '.pkl', 'wb') as fp:
-        pickle.dump(model, fp)
-
-
-def calculate_r2(snr, ssi, model_type: str):
-    """
-    :param model_type: 线性回归预测模型的类型，可选 lr、RANSAC
-    :param snr: snr数据
-    :param ssi: ssi数据
-    :return: 关于ssi的R2数值
-    """
-    X_train, X_test, y_train, y_test = train_test_split(snr, ssi, test_size=0.2, random_state=0)
-    train_model(X_train, y_train, model_type)
-    model = my_load.load_model_from_pkl(model_type)
-    y_predict = model.predict(X_test)
-    r2 = r2_score(y_true=y_test, y_pred=y_predict)
-
-    return r2
-
-
-def sigma_interval(data):
-    """
-    :param data: 待估计区间的数据集
-    :return: 2-sigma区间
-    """
-    data_average = np.average(data)
-    data_std = np.std(data)
-    return [data_average - 2 * data_std, data_average + 2 * data_std]
-
-
-def denoise(snr, ssi, mode: str):
-    """
-    :param snr: snr数据;
-    :param ssi: ssi数据;
-    :param mode: mode=sigma: 根据2sigma去除部分数据点;
-                 mode=lof: 根据lof算法去除离群点;
-                 mode=limit: 去除ssi小于-850的数据点;
-    :return: 经过降噪的snr,ssi数据
-    """
-    snr_ssi = np.concatenate((snr, ssi), axis=1)
-    print("@Before snr_ssi's Shape: " + str(snr_ssi.shape))
-    if mode == 'sigma':
-        ssi_min, ssi_max = sigma_interval(ssi)
-        snr_ssi = snr_ssi[np.all(snr_ssi >= ssi_min, axis=1), :]
-        snr_ssi = snr_ssi[np.any(snr_ssi <= ssi_max, axis=1), :]
-    elif mode == 'limit':
-        snr_ssi = snr_ssi[np.all(snr_ssi >= -850, axis=1), :]
-    elif mode == 'lof':
-        lof = LocalOutlierFactor(n_neighbors=20, contamination=0.05, algorithm='auto', n_jobs=-1)
-        label_predict = lof.fit_predict(snr_ssi)
-        snr_ssi = snr_ssi[label_predict > 0, :]
-    else:
-        raise ValueError(mode)
-
-    print("@After: snr_ssi's Shape: " + str(snr_ssi.shape))
-    return snr_ssi[:, 0].reshape(-1, 1), snr_ssi[:, 1].reshape(-1, 1)
+test_list = ['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04', '2023-01-05']
+tick_list = [1672502400, 1672588800, 1672675200, 1672761600, 1672848000, 1672934400, 1673020800,
+             1673107200, 1673193600, 1673280000, 1673366400, 1673452800, 1673539200, 1673625600,
+             1673712000, 1673798400, 1673884800, 1673971200, 1674057600, 1674144000, 1674230400,
+             1674316800, 1674403200, 1674489600, 1674576000, 1674662400, 1674748800, 1674835200,
+             1674921600]
 
 
 def main():
+    dict_tick_pos = load_save.load_from_json('resources/data/tick_key/dict_tick_position.json')
+    dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
+    tick_snr2ssi_root_path = 'resources/data/ap/tick_snr2ssi/'
+    pos_snr2ssi_root_path = 'resources/data/ap/pos_snr2ssi/Bias/'
 
-    pos_ssi_root_path = 'resources/data/ap/pos_ssi/'
-    ap = '0001'
-    pos_ssi_list = []
+    for index in range(0, 28):
+        date = date_list[index]
+        print('[loading] date: ' + date + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+                                                                          time.localtime(time.time())))
+        json_file_list = os.listdir(tick_snr2ssi_root_path + date)
+        for json_file in json_file_list:
+            print('[parsing] file: ' + json_file + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+                                                                                   time.localtime(time.time())))
+            tick_snr2ssi_list = load_save.load_from_json(tick_snr2ssi_root_path + date + '/' + json_file)
+            ap_data_dict = {}
+            for tick_snr2ssi in tick_snr2ssi_list:
+                tick, snr2ssi = tick_snr2ssi
+                '''由于可能会有一到两秒的误差，这里采取近似处理，且舍去误差超过两秒的数据'''
+                if tick in dict_tick_pos:
+                    pos = dict_tick_pos[tick][1]
+                elif tick+1 in dict_tick_pos:
+                    pos = dict_tick_pos[tick+1][1]
+                elif tick+2 in dict_tick_pos:
+                    pos = dict_tick_pos[tick+2][1]
+                elif tick-1 in dict_tick_pos:
+                    pos = dict_tick_pos[tick-1][1]
+                elif tick-2 in dict_tick_pos:
+                    pos = dict_tick_pos[tick-2][1]
+                else:
+                    continue
 
-    for test_date in test_list:
-        temp_list = my_load.load_from_json(pos_ssi_root_path + test_date + '/' + ap + '.json')
-        pos_ssi_list.extend(temp_list)
+                if pos not in ap_data_dict:
+                    ap_data_dict[pos] = [snr2ssi]
+                else:
+                    ap_data_dict[pos].append(snr2ssi)
 
-    pos_ssi_list.sort(key=lambda x: x[0])
-    pos = [x[0] for x in pos_ssi_list]
-    ssi = [x[1] for x in pos_ssi_list]
-    pos = np.array(pos) / 5000
-    ssi = np.array(ssi)
-    ssi_pred = poly1d(polyfit(pos, ssi, 48))
-    plt.plot(pos.reshape(-1, 1), ssi_pred(pos), c='red', linewidth=3.0)
-    plt.scatter(pos.reshape(-1, 1), ssi.reshape(-1, 1), c='blue')
-    plt.xlabel('POS')
-    plt.ylabel('SSI')
-    plt.grid()
-    plt.show()
+            ap_data_list = [(pos, mean(ap_data_dict[pos])) for pos in ap_data_dict.keys()]
+            ap_data_list = list(filter(lambda x: x[1] > -850, ap_data_list))
+            ap_data_list.sort(key=lambda x: x[0])
+            if not os.path.isdir(pos_snr2ssi_root_path + date):
+                os.makedirs(pos_snr2ssi_root_path + date)
+            load_save.save_in_json(ap_data_list, pos_snr2ssi_root_path + date + '/' + json_file)
 
 
 if __name__ == '__main__':
     main()
 
+    # 为AP绘制(位置,强度)图
+    # pos_snr2ssi_root_path = 'resources/data/ap/pos_snr2ssi/'
+    # ap = '0112'
+    # pos_snr2ssi_list = []
+    #
+    # for test_date in test_list:
+    #     temp_list = load_save.load_from_json(pos_snr2ssi_root_path + test_date + '/' + ap + '.json')
+    #     pos_snr2ssi_list.extend(temp_list)
+    #
+    # pos_snr2ssi_list.sort(key=lambda x: x[0])
+    # pos = [x[0] for x in pos_snr2ssi_list]
+    # ssi = [x[1] for x in pos_snr2ssi_list]
+    # pos = np.array(pos) / 3000
+    # ssi = np.array(ssi)
+    # ssi_pred = poly1d(polyfit(pos, ssi, 48))
+    # plt.plot(pos.reshape(-1, 1), ssi_pred(pos), c='red', linewidth=5.0)
+    # plt.scatter(pos.reshape(-1, 1), ssi.reshape(-1, 1), c='blue')
+    # plt.xlabel('POS')
+    # plt.ylabel('SSI')
+    # plt.grid()
+    # plt.show()
+
+    # 根据全量tick_snr2ssi数据，以日期为标记进行分组
+    # root_path = 'resources/data/ap/tick_snr2ssi/all/'
+    # json_file_list = os.listdir(root_path)
+    #
+    # for json_file in json_file_list:
+    #     print('parsing ' + json_file)
+    #     tick_snr2ssi_list = io.load_from_json(root_path + json_file)
+    #     for index in range(0, 28):
+    #         date_tick_snr2ssi_list = list(filter(
+    #             lambda x: (x[0] > tick_list[index]) & (x[0] < tick_list[index + 1]),
+    #             tick_snr2ssi_list))
+    #
+    #         if not os.path.isdir('resources/data/ap/tick_snr2ssi/' + date_list[index]):
+    #             os.makedirs('resources/data/ap/tick_snr2ssi/' + date_list[index])
+    #
+    #         date_tick_snr2ssi_list.sort(key=lambda x: x[0])
+    #         io.save_in_json(date_tick_snr2ssi_list, 'resources/data/ap/tick_snr2ssi/' + date_list[index] + '/' + json_file)
+
+    # 收集全量pos_snr2ssi数据
+    # dict_tick_pos = io.load_from_json('resources/data/tick_key/dict_tick_position.json')
+    # dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
+    # root_path = 'resources/data/ap/tick_snr2ssi/'
+    # json_file_list = os.listdir(root_path)
+    #
+    # for json_file in json_file_list:
+    #     print('parsing ' + json_file)
+    #     tick_snr2ssi = io.load_from_json(root_path + json_file)
+    #     dict_pos_snr2ssi = {}
+    #     for meta in tick_snr2ssi:
+    #         tick, snr2ssi = meta
+    #         if tick not in dict_tick_pos:
+    #             continue
+    #         pos = dict_tick_pos[tick][1]
+    #         if pos not in dict_pos_snr2ssi:
+    #             dict_pos_snr2ssi[pos] = [snr2ssi]
+    #         else:
+    #             dict_pos_snr2ssi[pos].append(snr2ssi)
+    #
+    #     list_pos_snr2ssi = [(x, round(mean(dict_pos_snr2ssi[x], 1))) for x in dict_pos_snr2ssi.keys()]
+    #     list_pos_snr2ssi = sorted(list_pos_snr2ssi, key=lambda x: x[0])
+    #     io.save_in_json(list_pos_snr2ssi, 'resources/data/ap/pos_snr2ssi/' + json_file)
+
+    # 将pos_snr2ssi按照日期分组
+    # dict_tick_pos = load_save.load_from_json('resources/data/tick_key/dict_tick_position.json')
+    # dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
+    # tick_snr2ssi_root_path = 'resources/data/ap/tick_snr2ssi/'
+    # pos_snr2ssi_root_path = 'resources/data/ap/pos_snr2ssi/'
+    #
+    # for index in range(0, 28):
+    #     date = date_list[index]
+    #     print('[loading] date: ' + date + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+    #                                                                       time.localtime(time.time())))
+    #     json_file_list = os.listdir(tick_snr2ssi_root_path + date)
+    #     for json_file in json_file_list:
+    #         print('[parsing] file: ' + json_file + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+    #                                                                                time.localtime(time.time())))
+    #         tick_snr2ssi_list = load_save.load_from_json(tick_snr2ssi_root_path + date + '/' + json_file)
+    #         ap_data_dict = {}
+    #         for tick_snr2ssi in tick_snr2ssi_list:
+    #             tick, snr2ssi = tick_snr2ssi
+    #             if tick not in dict_tick_pos:
+    #                 continue
+    #             pos = dict_tick_pos[tick][1]
+    #             if pos not in ap_data_dict:
+    #                 ap_data_dict[pos] = [snr2ssi]
+    #             else:
+    #                 ap_data_dict[pos].append(snr2ssi)
+    #
+    #         ap_data_list = [(pos, mean(ap_data_dict[pos])) for pos in ap_data_dict.keys()]
+    #         ap_data_list = list(filter(lambda x: x[1] > -850, ap_data_list))
+    #         ap_data_list.sort(key=lambda x: x[0])
+    #         if not os.path.isdir(pos_snr2ssi_root_path + date):
+    #             os.makedirs(pos_snr2ssi_root_path + date)
+    #         load_save.save_in_json(ap_data_list, pos_snr2ssi_root_path + date + '/' + json_file)
+
     # 根据 dict_time_pos 以及 time_ssi数据，将pos_ssi数据以天数进行分组
-    # dict_time_pos = my_load.load_from_json('resources/data/dict_time_position.json')
+    # dict_time_pos = io.load_from_json('resources/data/time_key/dict_time_position.json')
     # time_ssi_root_path = 'resources/data/ap/time_ssi/'
     # pos_ssi_root_path = 'resources/data/ap/pos_ssi/'
     # for date in date_list:
@@ -199,7 +186,7 @@ if __name__ == '__main__':
     #     for json_file in json_file_list:
     #         print('[parsing] file: ' + json_file + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
     #                                                                                time.localtime(time.time())))
-    #         time_ssi_list = my_load.load_from_json(time_ssi_root_path + date + '/' + json_file)
+    #         time_ssi_list = io.load_from_json(time_ssi_root_path + date + '/' + json_file)
     #         ap_data_dict = {}
     #         for time_ssi in time_ssi_list:
     #             time_stamp, ssi = time_ssi
@@ -211,15 +198,11 @@ if __name__ == '__main__':
     #             else:
     #                 ap_data_dict[pos].append(ssi)
     #
-    #             ap_data_list = []
-    #             for pos in ap_data_dict.keys():
-    #                 ssi = mean(ap_data_dict[pos])
-    #                 ap_data_list.append((pos, ssi))
-    #
-    #             ap_data = sorted(ap_data_list, key=lambda x: x[0])
-    #             if not os.path.isdir(pos_ssi_root_path + date):
-    #                 os.makedirs(pos_ssi_root_path + date)
-    #             my_load.save_in_json(ap_data, pos_ssi_root_path + date + '/' + json_file)
+    #         ap_data_list = [(pos, mean(ap_data_dict[pos])) for pos in ap_data_dict.keys()]
+    #         ap_data = sorted(ap_data_list, key=lambda x: x[0])
+    #         if not os.path.isdir(pos_ssi_root_path + date):
+    #             os.makedirs(pos_ssi_root_path + date)
+    #         io.save_in_json(ap_data, pos_ssi_root_path + date + '/' + json_file)
 
     # 根据全量time_ssi数据，以时间为标记进行分组
     # root_path = 'resources/data/ap/time_ssi/all'
@@ -298,3 +281,74 @@ if __name__ == '__main__':
     #
     #     my_utils.save_in_json(ap_data, 'resources/ap/time_ssi/' + ap + '.json')
 
+    # 收集tick_snr
+    # ap_list = io.load_from_json('resources/data/ap/ap_list.json')
+    #
+    # dict_tick_ap_snr_1 = io.load_from_json('resources/data/tick_key/dict_tick_ap_snr_1.json')
+    # dict_tick_ap_snr_1 = util.dict_key_str2int(dict_tick_ap_snr_1)
+    # dict_tick_ap_snr_2 = io.load_from_json('resources/data/tick_key/dict_tick_ap_snr_2.json')
+    # dict_tick_ap_snr_2 = util.dict_key_str2int(dict_tick_ap_snr_2)
+    # print("************[STAGE ONE]************")
+    # for ap in ap_list:
+    #     print("STAGE ONE: parsing " + ap)
+    #     ap_data = []
+    #     for tick in dict_tick_ap_snr_1.keys():
+    #         if ap in dict_tick_ap_snr_1[tick]:
+    #             ap_data.append((tick, mean(dict_tick_ap_snr_1[tick][ap])))
+    #
+    #     for tick in dict_tick_ap_snr_2.keys():
+    #         if ap in dict_tick_ap_snr_2[tick]:
+    #             ap_data.append((tick, mean(dict_tick_ap_snr_2[tick][ap])))
+    #
+    #     io.save_in_json(ap_data, 'resources/data/ap/tick_snr/' + ap + '.json')
+    #
+    # del dict_tick_ap_snr_1
+    # del dict_tick_ap_snr_2
+    #
+    # dict_tick_ap_snr_3 = io.load_from_json('resources/data/tick_key/dict_tick_ap_snr_3.json')
+    # dict_tick_ap_snr_3 = util.dict_key_str2int(dict_tick_ap_snr_3)
+    # dict_tick_ap_snr_4 = io.load_from_json('resources/data/tick_key/dict_tick_ap_snr_4.json')
+    # dict_tick_ap_snr_4 = util.dict_key_str2int(dict_tick_ap_snr_4)
+    # print("************[STAGE TWO]************")
+    # for ap in ap_list:
+    #     print("STAGE TWO: parsing " + ap)
+    #     ap_data = io.load_from_json('resources/data/ap/tick_snr/' + ap + '.json')
+    #     for tick in dict_tick_ap_snr_3.keys():
+    #         if ap in dict_tick_ap_snr_3[tick]:
+    #             ap_data.append((tick, mean(dict_tick_ap_snr_3[tick][ap])))
+    #
+    #     for tick in dict_tick_ap_snr_4.keys():
+    #         if ap in dict_tick_ap_snr_4[tick]:
+    #             ap_data.append((tick, mean(dict_tick_ap_snr_4[tick][ap])))
+    #
+    #     io.save_in_json(ap_data, 'resources/data/ap/tick_snr/' + ap + '.json')
+    #
+    # del dict_tick_ap_snr_3
+    # del dict_tick_ap_snr_4
+    #
+    # dict_tick_ap_snr_5 = io.load_from_json('resources/data/tick_key/dict_tick_ap_snr_5.json')
+    # dict_tick_ap_snr_5 = util.dict_key_str2int(dict_tick_ap_snr_5)
+    # print("************[STAGE THREE]************")
+    # for ap in ap_list:
+    #     print("STAGE THREE: parsing " + ap)
+    #     ap_data = io.load_from_json('resources/data/ap/tick_snr/' + ap + '.json')
+    #     for tick in dict_tick_ap_snr_5.keys():
+    #         if ap in dict_tick_ap_snr_5[tick]:
+    #             ap_data.append((tick, mean(dict_tick_ap_snr_5[tick][ap])))
+    #
+    #     io.save_in_json(ap_data, 'resources/data/ap/tick_snr/' + ap + '.json')
+
+    # tick_snr 预测 tick_snr2ssi
+    # root_path = 'resources/data/ap/tick_snr/all/'
+    # lr = io.load_model_from_pkl('LR')
+    # json_file_list = os.listdir(root_path)
+    #
+    # for json_file in json_file_list:
+    #     print('parsing ' + json_file)
+    #     tick_snr = io.load_from_json(root_path + json_file)
+    #     tick = [x[0] for x in tick_snr]
+    #     snr = [x[1] for x in tick_snr]
+    #     snr2ssi = lr.predict(np.array(snr).reshape(-1, 1)).flatten().tolist()
+    #     snr2ssi = [round(x, 1) for x in snr2ssi]
+    #     tick_snr2ssi = [list(x) for x in zip(tick, snr2ssi)]
+    #     io.save_in_json(tick_snr2ssi, 'resources/data/ap/tick_snr2ssi/' + json_file)
