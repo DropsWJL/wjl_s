@@ -31,48 +31,30 @@ tick_list = [1672502400, 1672588800, 1672675200, 1672761600, 1672848000, 1672934
 
 
 def main():
-    dict_tick_pos = load_save.load_from_json('resources/data/tick_key/dict_tick_position.json')
-    dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
-    tick_snr2ssi_root_path = 'resources/data/ap/tick_snr2ssi/'
     pos_snr2ssi_root_path = 'resources/data/ap/pos_snr2ssi/Bias/'
+    pos_ssi_root_path = 'resources/data/ap/pos_ssi/'
+    ap = '0001'
+    pos_snr2ssi_list = []
 
-    for index in range(0, 28):
-        date = date_list[index]
-        print('[loading] date: ' + date + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
-                                                                          time.localtime(time.time())))
-        json_file_list = os.listdir(tick_snr2ssi_root_path + date)
-        for json_file in json_file_list:
-            print('[parsing] file: ' + json_file + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
-                                                                                   time.localtime(time.time())))
-            tick_snr2ssi_list = load_save.load_from_json(tick_snr2ssi_root_path + date + '/' + json_file)
-            ap_data_dict = {}
-            for tick_snr2ssi in tick_snr2ssi_list:
-                tick, snr2ssi = tick_snr2ssi
-                '''由于可能会有一到两秒的误差，这里采取近似处理，且舍去误差超过两秒的数据'''
-                if tick in dict_tick_pos:
-                    pos = dict_tick_pos[tick][1]
-                elif tick+1 in dict_tick_pos:
-                    pos = dict_tick_pos[tick+1][1]
-                elif tick+2 in dict_tick_pos:
-                    pos = dict_tick_pos[tick+2][1]
-                elif tick-1 in dict_tick_pos:
-                    pos = dict_tick_pos[tick-1][1]
-                elif tick-2 in dict_tick_pos:
-                    pos = dict_tick_pos[tick-2][1]
-                else:
-                    continue
+    for test_date in test_list:
+        temp_list = load_save.load_from_json(pos_snr2ssi_root_path + test_date + '/' + ap + '.json')
+        pos_snr2ssi_list.extend(temp_list)
+        temp_list = load_save.load_from_json(pos_ssi_root_path + test_date + '/' + ap + '.json')
+        pos_snr2ssi_list.extend(temp_list)
 
-                if pos not in ap_data_dict:
-                    ap_data_dict[pos] = [snr2ssi]
-                else:
-                    ap_data_dict[pos].append(snr2ssi)
-
-            ap_data_list = [(pos, mean(ap_data_dict[pos])) for pos in ap_data_dict.keys()]
-            ap_data_list = list(filter(lambda x: x[1] > -850, ap_data_list))
-            ap_data_list.sort(key=lambda x: x[0])
-            if not os.path.isdir(pos_snr2ssi_root_path + date):
-                os.makedirs(pos_snr2ssi_root_path + date)
-            load_save.save_in_json(ap_data_list, pos_snr2ssi_root_path + date + '/' + json_file)
+    pos_snr2ssi_list.sort(key=lambda x: x[0])
+    pos = [x[0] for x in pos_snr2ssi_list]
+    ssi = [x[1] for x in pos_snr2ssi_list]
+    pos = np.array(pos) / 1000
+    ssi = np.array(ssi)
+    ssi_pred = poly1d(polyfit(pos, ssi, 36))
+    plt.plot(pos.reshape(-1, 1), ssi_pred(pos), c='red', linewidth=5.0)
+    plt.scatter(pos.reshape(-1, 1), ssi.reshape(-1, 1), c='blue')
+    plt.xlabel('POS')
+    plt.ylabel('SSI')
+    plt.title(ap)
+    plt.grid()
+    plt.show()
 
 
 if __name__ == '__main__':
@@ -142,7 +124,51 @@ if __name__ == '__main__':
     #     list_pos_snr2ssi = sorted(list_pos_snr2ssi, key=lambda x: x[0])
     #     io.save_in_json(list_pos_snr2ssi, 'resources/data/ap/pos_snr2ssi/' + json_file)
 
-    # 将pos_snr2ssi按照日期分组
+    # 将pos_snr2ssi按照日期分组 Bias
+    # dict_tick_pos = load_save.load_from_json('resources/data/tick_key/dict_tick_position.json')
+    # dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
+    # tick_snr2ssi_root_path = 'resources/data/ap/tick_snr2ssi/'
+    # pos_snr2ssi_root_path = 'resources/data/ap/pos_snr2ssi/Bias/'
+    #
+    # for index in range(0, 28):
+    #     date = date_list[index]
+    #     print('[loading] date: ' + date + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+    #                                                                       time.localtime(time.time())))
+    #     json_file_list = os.listdir(tick_snr2ssi_root_path + date)
+    #     for json_file in json_file_list:
+    #         print('[parsing] file: ' + json_file + ', ' + 'time: ' + time.strftime('%Y-%m-%d %H:%M:%S',
+    #                                                                                time.localtime(time.time())))
+    #         tick_snr2ssi_list = load_save.load_from_json(tick_snr2ssi_root_path + date + '/' + json_file)
+    #         ap_data_dict = {}
+    #         for tick_snr2ssi in tick_snr2ssi_list:
+    #             tick, snr2ssi = tick_snr2ssi
+    #             '''由于可能会有一到两秒的误差，这里采取近似处理，且舍去误差超过两秒的数据'''
+    #             if tick in dict_tick_pos:
+    #                 pos = dict_tick_pos[tick][1]
+    #             elif tick+1 in dict_tick_pos:
+    #                 pos = dict_tick_pos[tick+1][1]
+    #             elif tick+2 in dict_tick_pos:
+    #                 pos = dict_tick_pos[tick+2][1]
+    #             elif tick-1 in dict_tick_pos:
+    #                 pos = dict_tick_pos[tick-1][1]
+    #             elif tick-2 in dict_tick_pos:
+    #                 pos = dict_tick_pos[tick-2][1]
+    #             else:
+    #                 continue
+    #
+    #             if pos not in ap_data_dict:
+    #                 ap_data_dict[pos] = [snr2ssi]
+    #             else:
+    #                 ap_data_dict[pos].append(snr2ssi)
+    #
+    #         ap_data_list = [(pos, mean(ap_data_dict[pos])) for pos in ap_data_dict.keys()]
+    #         ap_data_list = list(filter(lambda x: x[1] > -850, ap_data_list))
+    #         ap_data_list.sort(key=lambda x: x[0])
+    #         if not os.path.isdir(pos_snr2ssi_root_path + date):
+    #             os.makedirs(pos_snr2ssi_root_path + date)
+    #         load_save.save_in_json(ap_data_list, pos_snr2ssi_root_path + date + '/' + json_file)
+
+    # 将pos_snr2ssi按照日期分组 NoBias
     # dict_tick_pos = load_save.load_from_json('resources/data/tick_key/dict_tick_position.json')
     # dict_tick_pos = util.dict_key_str2int(dict_tick_pos)
     # tick_snr2ssi_root_path = 'resources/data/ap/tick_snr2ssi/'

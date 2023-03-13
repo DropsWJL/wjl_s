@@ -8,3 +8,4 @@ resources/dict_time_position.pkl
 *.json
 Solution.pdf
 Solution.md
+*.png
